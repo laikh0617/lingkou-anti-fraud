@@ -223,6 +223,15 @@ h1{font-size:48px;line-height:60px;font-weight:900;letter-spacing:.02em;margin:v
 .stamps{display:flex;gap:var(--space-4);flex-wrap:wrap}
 .stamp{width:68px;height:68px;border-radius:var(--radius-full);border:2px dashed var(--line);display:grid;place-items:center;text-align:center;font-family:var(--font-hand);font-weight:700;font-size:13px;line-height:16px;color:var(--ink-muted);padding:var(--space-1);transform:rotate(-8deg);transition:all .3s}
 .stamp.earned{border:3px double var(--totem-red);color:var(--totem-red);background:var(--red-tint);transform:rotate(-14deg)}
+.student{display:grid;gap:var(--space-2);border-top:1px dashed var(--line);padding-top:var(--space-2)}
+.student-fields{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2)}
+.student-fields label{font-size:14px;font-weight:700}
+.student-fields input{width:5.5em;font:inherit;font-size:15px;line-height:22px;color:var(--ink);background:var(--paper);border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-1) var(--space-2)}
+.student-fields input:focus-visible{outline:2px solid var(--school-purple);outline-offset:1px;border-color:var(--school-purple)}
+.student-note{font-size:13px;line-height:20px;color:var(--ink-muted);max-width:22rem}
+.student-note b{color:var(--ink);font-variant-numeric:tabular-nums}
+#report-status{color:var(--sky-text);font-weight:700}
+#report-status:empty{display:none}
 .tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--space-2);margin-bottom:-1.5px;position:relative;z-index:1}
 @media (max-width:820px){.tabs{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:var(--space-4)}}
 .tab{appearance:none;text-align:left;background:transparent;border:1.5px solid var(--line);border-bottom-color:transparent;border-radius:var(--radius-md) var(--radius-md) 0 0;padding:var(--space-2) var(--space-4);cursor:pointer;display:grid;gap:2px;color:var(--ink-muted)}
@@ -621,6 +630,14 @@ footer .wrap{display:grid;grid-template-columns:96px minmax(0,1fr);gap:var(--spa
           <span class="stamp" data-stamp="sp" data-name="紅筆偵探章">紅筆<br>偵探</span>
           <span class="stamp" data-stamp="st" data-name="冷靜應變章">冷靜<br>應變</span>
         </div>
+        <div class="student" id="student-box" hidden>
+          <div class="student-fields">
+            <label for="stu-class">班級</label><input id="stu-class" maxlength="10" placeholder="例：501" autocomplete="off">
+            <label for="stu-seat">座號</label><input id="stu-seat" maxlength="3" inputmode="numeric" placeholder="例：12" autocomplete="off">
+          </div>
+          <p class="student-note">選填。每關的遊戲結果會傳給嶺口國小老師做教學參考，不收姓名；不填就用匿名代號 <b id="stu-anon"></b> 記錄。</p>
+          <p class="student-note" id="report-status" aria-live="polite"></p>
+        </div>
       </div>
     </div>
 
@@ -845,6 +862,37 @@ function award(id) {
 }
 renderPassport();
 
+/* ================= 成績回傳（Google 試算表） ================= */
+// 部署 apps-script/Code.gs 後，把「網頁應用程式」網址貼在這裡；留空就不會傳送任何資料
+const REPORT_URL = '';
+const REPORT_KEY = 'lingkou-165';  // 要和 Code.gs 裡的 KEY 一樣
+const PROFILE_KEY = 'quanzha-profile-v1';
+let profile = { cls: '', seat: '', anon: '' };
+try { profile = Object.assign(profile, JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}')); } catch (e) {}
+if (!profile.anon) profile.anon = 'A' + Math.random().toString(36).slice(2, 8).toUpperCase();
+function saveProfile() { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch (e) {} }
+saveProfile();
+function setReportStatus(msg) {
+  const d = new Date();
+  $('#report-status').textContent = `${msg}（${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}）`;
+}
+function report(summary, items) {
+  if (!REPORT_URL) return;
+  const body = JSON.stringify({ key: REPORT_KEY, cls: profile.cls, seat: profile.seat, anon: profile.anon, summary, items: items || [] });
+  fetch(REPORT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body, keepalive: true })
+    .then(() => setReportStatus(`${summary.game}的成績已送出`))
+    .catch(() => setReportStatus(`${summary.game}的成績沒有送出，請檢查網路`));
+}
+if (REPORT_URL) {
+  $('#student-box').hidden = false;
+  const ci = $('#stu-class'), si = $('#stu-seat');
+  ci.value = profile.cls;
+  si.value = profile.seat;
+  $('#stu-anon').textContent = profile.anon;
+  ci.addEventListener('input', () => { profile.cls = ci.value.trim(); saveProfile(); });
+  si.addEventListener('input', () => { profile.seat = si.value.trim(); saveProfile(); });
+}
+
 /* ================= 破解公式 ================= */
 const FORMULAS = [
   { name: '假網拍', rank: '9 月件數第 1', terms: ['便宜到不合理', '私下交易、陌生連結', '要你加客服做實名認證'], crack: '只用購物平台內建的付款和物流，不點賣家傳來的連結。' },
@@ -980,7 +1028,7 @@ function hrNew(mode) {
   HR.mode = mode;
   HR.pools = { 1: shuffle(QUIZ.easy), 2: shuffle(QUIZ.mid), 4: shuffle(QUIZ.hard) };
   HR.teams = mode === 'solo' ? [newTeam('你', 'solo')] : [newTeam('紅隊', 'red'), newTeam('藍隊', 'blue')];
-  HR.cur = 0; HR.log = [];
+  HR.cur = 0; HR.log = []; HR.items = [];
   hrPick();
 }
 function hrPick() {
@@ -1039,6 +1087,7 @@ function hrAnswer(i) {
     if (j === q.a) b.classList.add('right'); else if (j === i) b.classList.add('wrong');
   });
   const who = HR.mode === 'duo' ? t.name : '你';
+  HR.items.push({ q: q.q, a: (HR.mode === 'duo' ? t.name + '：' : '') + q.o[i], r: ok ? '答對' : '答錯' });
   let head, detail;
   if (ok) {
     const runs = advance(t, HR.swing);
@@ -1085,6 +1134,18 @@ function hrEnd() {
   }
   hrStage.innerHTML = html + `${hrLogHTML()}<div class="end-actions"><button class="btn primary" data-act="hr-again">再來一場</button><button class="btn" data-act="hr-intro">換模式</button></div>`;
   $('h3', hrStage).focus({ preventScroll: true });
+  const items = HR.items || [];
+  if (items.length) {
+    const right = items.filter(x => x.r === '答對').length;
+    const runs = HR.teams.reduce((s, x) => s + x.runs, 0);
+    report({
+      game: '防詐全壘打', level: HR.mode === 'solo' ? '單人挑戰' : '兩隊對抗',
+      score: runs, max: '', correct: right, wrong: items.length - right,
+      stamp: HR.mode === 'duo' || runs >= 3,
+      note: HR.mode === 'duo' ? `紅隊 ${HR.teams[0].runs} : 藍隊 ${HR.teams[1].runs}` : `守住 ${runs * 10} 萬元`
+    }, items);
+    HR.items = [];
+  }
 }
 hrStage.addEventListener('click', e => {
   const b = e.target.closest('[data-act]');
@@ -1120,6 +1181,8 @@ const CARDS = [
   { scam: false, type: 'app', from: '購物 App', sub: '從官方商店下載的 App', time: '上午 11:15', text: '您的訂單已出貨，預計 10/26 送達。可在 App 的「我的訂單」查看物流進度。', w: '在自己下載的官方 App 裡收到通知，沒有要你點外部連結，也沒有要你付款。' }
 ];
 const TYPE_LABEL = { sms: '簡訊', chat: '通訊軟體', call: '來電', email: '電子郵件', post: '社群貼文', app: 'App 通知' };
+const plain = s => String(s || '').replace(/\[\[|\]\]/g, '');
+const msgLabel = c => { const t = plain(c.text); return `${TYPE_LABEL[c.type]}｜${plain(c.from)}：${t.length > 40 ? t.slice(0, 40) + '…' : t}`; };
 const PHONE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg>';
 function renderMsg(c) {
   const top = `<div class="screen-top"><span class="chip">${TYPE_LABEL[c.type]}</span><span>${esc(c.time || '')}</span></div>`;
@@ -1143,7 +1206,7 @@ const QJ = { deck: [], i: 0, score: 0, streak: 0, best: 0, answered: false };
 function qjNew() {
   const scams = shuffle(CARDS.filter(c => c.scam)).slice(0, 6);
   const safes = shuffle(CARDS.filter(c => !c.scam)).slice(0, 4);
-  Object.assign(QJ, { deck: shuffle(scams.concat(safes)), i: 0, score: 0, streak: 0, best: 0 });
+  Object.assign(QJ, { deck: shuffle(scams.concat(safes)), i: 0, score: 0, streak: 0, best: 0, items: [] });
   $('#qj-end').hidden = true;
   $('#qj-play').hidden = false;
   qjShow();
@@ -1167,6 +1230,7 @@ function qjAnswer(saysScam) {
   QJ.answered = true;
   const c = QJ.deck[QJ.i], ok = saysScam === c.scam;
   if (ok) { QJ.score++; QJ.streak++; QJ.best = Math.max(QJ.best, QJ.streak); } else QJ.streak = 0;
+  QJ.items.push({ q: msgLabel(c), a: saysScam ? '詐騙' : '安全', r: ok ? '答對' : '答錯' });
   $('#qj-scam').disabled = true; $('#qj-safe').disabled = true;
   $('#qj-screen').classList.add('reveal');
   const st = $('#qj-stamp');
@@ -1194,6 +1258,7 @@ function qjEnd() {
     <p class="muted" style="margin-top:8px">記住：看寄件人、看網址最後面、看對方有沒有要錢或要資料。</p>
     <div class="end-actions"><button class="btn primary" id="qj-again">再玩一次</button></div>`;
   if (s >= 8) award('qj');
+  report({ game: '真假快判', level: `${n} 則訊息`, score: s, max: n, correct: s, wrong: n - s, stamp: s >= 8, note: `最多連續答對 ${QJ.best} 題` }, QJ.items);
   $('h3', end).focus({ preventScroll: true });
 }
 $('#qj-scam').addEventListener('click', () => qjAnswer(true));
@@ -1295,7 +1360,7 @@ const SCENES = [
     ]
   }
 ];
-const SP = { scene: 0, found: SCENES.map(() => new Set()), self: SCENES.map(() => 0), shown: SCENES.map(() => false) };
+const SP = { scene: 0, found: SCENES.map(() => new Set()), self: SCENES.map(() => 0), shown: SCENES.map(() => false), selfSet: SCENES.map(() => new Set()), reported: SCENES.map(() => false) };
 const spMock = $('#sp-mock');
 function spRenderScenes() {
   $('#sp-scenes').innerHTML = SCENES.map((s, i) => {
@@ -1331,6 +1396,16 @@ function spCheckStamp() {
   const all = SCENES.reduce((a, s) => a + s.flags.length, 0);
   if (total >= Math.ceil(all * 0.8)) award('sp');
 }
+function spReport(i) {
+  if (SP.reported[i]) return;
+  SP.reported[i] = true;
+  const s = SCENES[i], got = SP.selfSet[i];
+  report({
+    game: '找出破綻', level: `第 ${i + 1} 關・${s.name}`,
+    score: got.size, max: s.flags.length, correct: got.size, wrong: s.flags.length - got.size,
+    stamp: !!stamps.sp, note: SP.shown[i] ? '有按「看答案」' : ''
+  }, s.flags.map((fl, k) => ({ q: fl.t, a: got.has(k) ? '找到' : '沒找到', r: got.has(k) ? '找到' : '沒找到' })));
+}
 spMock.addEventListener('click', e => {
   const sp = e.target.closest('.spot');
   const i = SP.scene, f = SP.found[i];
@@ -1338,12 +1413,12 @@ spMock.addEventListener('click', e => {
     const k = +sp.dataset.k;
     if (f.has(k)) return;
     f.add(k);
-    if (!SP.shown[i]) SP.self[i]++;
+    if (!SP.shown[i]) { SP.self[i]++; SP.selfSet[i].add(k); }
     sp.classList.remove('hint');
     sp.classList.add('found');
     spSide();
-    if (f.size === SCENES[i].flags.length) { spRenderScenes(); toast('這一關的破綻全部找到了！'); }
     spCheckStamp();
+    if (f.size === SCENES[i].flags.length) { spRenderScenes(); toast('這一關的破綻全部找到了！'); spReport(i); }
     return;
   }
   const r = spMock.getBoundingClientRect();
@@ -1371,6 +1446,7 @@ $('#sp-show').addEventListener('click', () => {
     if (!SP.found[i].has(k)) { SP.found[i].add(k); el.classList.add('shown'); }
   });
   spSide(); spRenderScenes();
+  spReport(i);
 });
 $('#sp-next').addEventListener('click', () => spShow((SP.scene + 1) % SCENES.length));
 $('#sp-scenes').addEventListener('click', e => { const b = e.target.closest('button[data-i]'); if (b) spShow(+b.dataset.i); });
@@ -1514,6 +1590,7 @@ async function stGo(nodeId) {
 function stStart(id) {
   ST.run++;
   ST.id = id;
+  ST.path = [];
   stChat.innerHTML = '';
   stRenderList();
   stGo(STORIES[id].start);
@@ -1521,6 +1598,7 @@ function stStart(id) {
 function stChoose(i) {
   const story = STORIES[ST.id], node = story.nodes[ST.node], c = node.choices[i];
   addLine({ who: 'me', text: c.t });
+  ST.path.push(c.t);
   if (c.note) addLine({ who: 'note', text: '紅筆：' + c.note });
   stGo(c.next);
 }
@@ -1541,6 +1619,7 @@ function stEnd(node) {
     <div class="end-actions"><button class="btn dark" data-act="st-start" data-id="${id}">再玩一次</button><button class="btn" data-act="st-start" data-id="${nextId}">換「${esc(STORIES[nextId].title)}」</button></div>`;
   $('.fb-head', stSide).focus({ preventScroll: true });
   if (ids.every(x => ST.best[x] && ST.best[x] !== 'scam')) award('st');
+  report({ game: '來電應變', level: story.title, score: info.rank, max: 2, correct: '', wrong: '', stamp: !!stamps.st, note: `結局：${info.title}｜選擇：${(ST.path || []).join(' → ')}` });
 }
 $('#st-list').addEventListener('click', e => { const b = e.target.closest('.story-card'); if (b) stStart(b.dataset.id); });
 stSide.addEventListener('click', e => {
